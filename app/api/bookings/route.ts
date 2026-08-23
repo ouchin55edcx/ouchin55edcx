@@ -15,12 +15,12 @@ export async function GET(request: Request) {
   const date = params.get('date') || new Date().toISOString().slice(0, 10)
   const collectionId = params.get('collectionId')
   if (collectionId) {
-    const result = await db.execute(sql`SELECT booking_id AS id, traveler, phone, pax, pickup FROM collection_bookings WHERE collection_id = ${Number(collectionId)} ORDER BY created_at ASC`)
+    const result = await db.execute(sql`SELECT booking_id AS id, traveler, phone, email, pax, pickup FROM collection_bookings WHERE collection_id = ${Number(collectionId)} ORDER BY created_at ASC`)
     return NextResponse.json({ collectionBookings: result.rows })
   }
   const g = await group(date)
   const [global, collections, blacklist] = await Promise.all([
-    db.execute(sql`SELECT booking_id AS id, traveler, phone, pax, pickup, travel_date FROM bookings WHERE travel_date = ${date}::date ORDER BY created_at ASC`),
+    db.execute(sql`SELECT booking_id AS id, traveler, phone, email, pax, pickup, travel_date FROM bookings WHERE travel_date = ${date}::date ORDER BY created_at ASC`),
     db.execute(sql`SELECT c.id, c.name, c.created_at, COUNT(cb.id)::int AS count FROM booking_collections c LEFT JOIN collection_bookings cb ON cb.collection_id = c.id WHERE c.group_id = ${g.id} GROUP BY c.id ORDER BY c.created_at DESC`),
     db.execute(sql`SELECT booking_id FROM booking_blacklist ORDER BY created_at ASC`),
   ])
@@ -28,21 +28,21 @@ export async function GET(request: Request) {
 }
 export async function POST(request: Request) {
   if (!await authorized()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const body = await request.json(); const date = String(body.date).trim(); const booking = { id: String(body.id).trim(), traveler: String(body.traveler).trim(), phone: String(body.phone).trim(), pax: Number(body.pax), pickup: String(body.pickup).trim() }
-  if (!date || !booking.id || !booking.traveler || !booking.phone || !Number.isInteger(booking.pax) || booking.pax < 1 || !booking.pickup) return NextResponse.json({ error: 'Invalid booking' }, { status: 400 })
+  const body = await request.json(); const date = String(body.date).trim(); const booking = { id: String(body.id).trim(), traveler: String(body.traveler).trim(), phone: String(body.phone).trim(), email: String(body.email || '').trim() || null, pax: Number(body.pax), pickup: String(body.pickup).trim() }
+  if (!date || !booking.id || !booking.traveler || !booking.phone || (booking.email && !/^\S+@\S+\.\S+$/.test(booking.email)) || !Number.isInteger(booking.pax) || booking.pax < 1 || !booking.pickup) return NextResponse.json({ error: 'Invalid booking' }, { status: 400 })
   const g = await group(date)
   if (body.collectionId) {
-    const result = await db.execute(sql`INSERT INTO collection_bookings (collection_id, booking_id, traveler, phone, pax, pickup) VALUES (${Number(body.collectionId)}, ${booking.id}, ${booking.traveler}, ${booking.phone}, ${booking.pax}, ${booking.pickup}) RETURNING booking_id AS id, traveler, phone, pax, pickup`)
+    const result = await db.execute(sql`INSERT INTO collection_bookings (collection_id, booking_id, traveler, phone, email, pax, pickup) VALUES (${Number(body.collectionId)}, ${booking.id}, ${booking.traveler}, ${booking.phone}, ${booking.email}, ${booking.pax}, ${booking.pickup}) RETURNING booking_id AS id, traveler, phone, email, pax, pickup`)
     return NextResponse.json(result.rows[0], { status: 201 })
   }
-  const result = await db.execute(sql`INSERT INTO bookings (booking_id, traveler, phone, pax, pickup, travel_date) VALUES (${booking.id}, ${booking.traveler}, ${booking.phone}, ${booking.pax}, ${booking.pickup}, ${date}::date) RETURNING booking_id AS id, traveler, phone, pax, pickup, travel_date`)
+  const result = await db.execute(sql`INSERT INTO bookings (booking_id, traveler, phone, email, pax, pickup, travel_date) VALUES (${booking.id}, ${booking.traveler}, ${booking.phone}, ${booking.email}, ${booking.pax}, ${booking.pickup}, ${date}::date) RETURNING booking_id AS id, traveler, phone, email, pax, pickup, travel_date`)
   return NextResponse.json(result.rows[0], { status: 201 })
 }
 export async function PUT(request: Request) {
   if (!await authorized()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await request.json(); const date = String(body.date || new Date().toISOString().slice(0, 10)); const g = await group(date)
   if (body.action === 'collection') { const result = await db.execute(sql`INSERT INTO booking_collections (group_id, name) VALUES (${g.id}, ${String(body.name || 'New collection').trim()}) RETURNING id, name, created_at`); return NextResponse.json(result.rows[0], { status: 201 }) }
-  if (body.action === 'merge') { await db.execute(sql`INSERT INTO bookings (booking_id, traveler, phone, pax, pickup, travel_date) SELECT cb.booking_id, cb.traveler, cb.phone, cb.pax, cb.pickup, ${date}::date FROM collection_bookings cb WHERE cb.collection_id = ${Number(body.collectionId)} ON CONFLICT (booking_id) DO NOTHING`); return NextResponse.json({ ok: true }) }
+  if (body.action === 'merge') { await db.execute(sql`INSERT INTO bookings (booking_id, traveler, phone, email, pax, pickup, travel_date) SELECT cb.booking_id, cb.traveler, cb.phone, cb.email, cb.pax, cb.pickup, ${date}::date FROM collection_bookings cb WHERE cb.collection_id = ${Number(body.collectionId)} ON CONFLICT (booking_id) DO NOTHING`); return NextResponse.json({ ok: true }) }
   const id = String(body.id).trim().toLowerCase(); await db.execute(sql`INSERT INTO booking_blacklist (booking_id) VALUES (${id}) ON CONFLICT (booking_id) DO NOTHING`); return NextResponse.json({ id }, { status: 201 })
 }
 export async function DELETE(request: Request) {
