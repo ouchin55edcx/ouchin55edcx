@@ -49,6 +49,6 @@ export async function PUT(request: Request) {
 }
 export async function DELETE(request: Request) {
   if (!await authorized()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const body = await request.json(); if (body.collectionId) await db.execute(sql`DELETE FROM collection_bookings WHERE collection_id = ${Number(body.collectionId)}`); else if (body.blacklist) await db.execute(sql`DELETE FROM booking_blacklist WHERE booking_id = ${String(body.id).trim().toLowerCase()}`); else await db.execute(sql`DELETE FROM bookings WHERE booking_id = ${String(body.id).trim()} AND travel_date = ${String(body.date)}::date`)
+  const body = await request.json(); if (body.collectionId) { if (body.removeCollection) await db.execute(sql`DELETE FROM booking_collections WHERE id = ${Number(body.collectionId)}`); else await db.execute(sql`DELETE FROM collection_bookings WHERE collection_id = ${Number(body.collectionId)}`) } else if (body.removeAllCollections) await db.execute(sql`DELETE FROM booking_collections WHERE group_id = (SELECT id FROM travel_groups WHERE travel_date = ${String(body.date)}::date)`); else if (body.blacklist) await db.execute(sql`DELETE FROM booking_blacklist WHERE booking_id = ${String(body.id).trim().toLowerCase()}`); else await db.execute(sql`DELETE FROM bookings WHERE booking_id = ${String(body.id).trim()} AND travel_date = ${String(body.date)}::date`)
   return NextResponse.json({ ok: true })
 }
