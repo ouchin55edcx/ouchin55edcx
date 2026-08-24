@@ -32,6 +32,8 @@ export async function POST(request: Request) {
   if (!date || !booking.id || !booking.traveler || !booking.phone || (booking.email && !/^\S+@\S+\.\S+$/.test(booking.email)) || !Number.isInteger(booking.pax) || booking.pax < 1 || !booking.pickup) return NextResponse.json({ error: 'Invalid booking' }, { status: 400 })
   const g = await group(date)
   if (body.collectionId) {
+    const duplicate = await db.execute(sql`SELECT 1 FROM bookings WHERE booking_id = ${booking.id} AND travel_date = ${date}::date LIMIT 1`)
+    if (duplicate.rows.length) return NextResponse.json({ error: 'Booking ID already exists in the global list for this date' }, { status: 409 })
     const result = await db.execute(sql`INSERT INTO collection_bookings (collection_id, booking_id, traveler, phone, email, pax, pickup) VALUES (${Number(body.collectionId)}, ${booking.id}, ${booking.traveler}, ${booking.phone}, ${booking.email}, ${booking.pax}, ${booking.pickup}) RETURNING booking_id AS id, traveler, phone, email, pax, pickup`)
     return NextResponse.json(result.rows[0], { status: 201 })
   }
@@ -47,6 +49,6 @@ export async function PUT(request: Request) {
 }
 export async function DELETE(request: Request) {
   if (!await authorized()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const body = await request.json(); if (body.collectionId) await db.execute(sql`DELETE FROM collection_bookings WHERE collection_id = ${Number(body.collectionId)}`); else if (body.blacklist) await db.execute(sql`DELETE FROM booking_blacklist WHERE booking_id = ${String(body.id).trim().toLowerCase()}`); else await db.execute(sql`DELETE FROM bookings WHERE booking_id = ${String(body.id).trim()} AND travel_date = ${String(body.date)}::date`)
+  const body = await request.json(); if (body.collectionId) { if (body.removeCollection) await db.execute(sql`DELETE FROM booking_collections WHERE id = ${Number(body.collectionId)}`); else await db.execute(sql`DELETE FROM collection_bookings WHERE collection_id = ${Number(body.collectionId)}`) } else if (body.removeAllCollections) await db.execute(sql`DELETE FROM booking_collections WHERE group_id = (SELECT id FROM travel_groups WHERE travel_date = ${String(body.date)}::date)`); else if (body.blacklist) await db.execute(sql`DELETE FROM booking_blacklist WHERE booking_id = ${String(body.id).trim().toLowerCase()}`); else await db.execute(sql`DELETE FROM bookings WHERE booking_id = ${String(body.id).trim()} AND travel_date = ${String(body.date)}::date`)
   return NextResponse.json({ ok: true })
 }
