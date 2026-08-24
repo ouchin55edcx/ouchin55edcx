@@ -32,6 +32,8 @@ export async function POST(request: Request) {
   if (!date || !booking.id || !booking.traveler || !booking.phone || (booking.email && !/^\S+@\S+\.\S+$/.test(booking.email)) || !Number.isInteger(booking.pax) || booking.pax < 1 || !booking.pickup) return NextResponse.json({ error: 'Invalid booking' }, { status: 400 })
   const g = await group(date)
   if (body.collectionId) {
+    const duplicate = await db.execute(sql`SELECT 1 FROM bookings WHERE booking_id = ${booking.id} AND travel_date = ${date}::date LIMIT 1`)
+    if (duplicate.rows.length) return NextResponse.json({ error: 'Booking ID already exists in the global list for this date' }, { status: 409 })
     const result = await db.execute(sql`INSERT INTO collection_bookings (collection_id, booking_id, traveler, phone, email, pax, pickup) VALUES (${Number(body.collectionId)}, ${booking.id}, ${booking.traveler}, ${booking.phone}, ${booking.email}, ${booking.pax}, ${booking.pickup}) RETURNING booking_id AS id, traveler, phone, email, pax, pickup`)
     return NextResponse.json(result.rows[0], { status: 201 })
   }
