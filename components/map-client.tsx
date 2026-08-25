@@ -9,9 +9,21 @@ mapboxgl.accessToken = 'pk.eyJ1Ijoib3VjaGluNTVlZGN4IiwiYSI6ImNtaXJ1MzVrNDA2Y2ozY
 type Booking = { id: string; pax: number; pickup: string; travel_date?: string }
 type Group = { key: string; lng: number; lat: number; pax: number; ids: string[]; count: number }
 
-function coordinates(url: string) {
-  const match = url.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) || url.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
-  return match ? { lat: Number(match[1]), lng: Number(match[2]) } : null
+function coordinates(rawUrl: string) {
+  const url = decodeURIComponent(rawUrl.trim())
+  const ordered = url.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
+  if (ordered) return { lat: Number(ordered[1]), lng: Number(ordered[2]) }
+  const pair = url.match(/(?:@|q=|query=|ll=|place\/)(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i)
+  if (pair) {
+    const lat = Number(pair[1]); const lng = Number(pair[2])
+    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng }
+  }
+  const fallback = url.match(/(-?\d{1,3}\.\d{4,}),\s*(-?\d{1,3}\.\d{4,})/)
+  if (fallback) {
+    const first = Number(fallback[1]); const second = Number(fallback[2])
+    if (Math.abs(first) <= 90 && Math.abs(second) <= 180) return { lat: first, lng: second }
+  }
+  return null
 }
 
 export default function MapClient() {
