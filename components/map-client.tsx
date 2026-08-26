@@ -6,18 +6,27 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 import Link from 'next/link'
 
 mapboxgl.accessToken = 'pk.eyJ1Ijoib3VjaGluNTVlZGN4IiwiYSI6ImNtaXJ1MzVrNDA2Y2ozY3NhOXoxcng3NnEifQ.6yBtRfXRlgQ8vlmsYrRS2w'
-type Booking = { id: string; pax: number; pickup: string; travel_date?: string }
+type Booking = { id: string; pax: number; pickup: string; traveler?: string; phone?: string; email?: string; travel_date?: string }
 type Group = { key: string; lng: number; lat: number; pax: number; ids: string[]; count: number }
 type CustomerGroup = { number: number; pax: number; bookings: Booking[]; zone: string }
-function makeCustomerGroups(bookings: Booking[], target = 20): CustomerGroup[] {
-  const located = bookings.map(b => ({ b, point: coordinates(b.pickup) })).filter(x => x.point)
-  const sorted = located.sort((a, b) => (a.point!.lat + a.point!.lng) - (b.point!.lat + b.point!.lng))
-  const groups: CustomerGroup[] = Array.from({ length: target }, (_, i) => ({ number: i + 1, pax: 0, bookings: [], zone: '' }))
-  const targets = groups.map((_, i) => i < 3 ? 14 : 17)
-  sorted.forEach(({ b, point }) => {
-    const candidates = groups.map((g, i) => ({ g, i, score: Math.abs((g.pax + b.pax) - targets[i]) + (g.bookings.length ? Math.abs(point!.lat - (g.bookings.reduce((s, x) => s + (coordinates(x.pickup)?.lat || 0), 0) / g.bookings.length)) * 3 : 0) })).filter(x => x.g.pax + b.pax <= 20 || groups.every(g => g.pax + b.pax > 20))
-    const choice = candidates.sort((a, z) => a.score - z.score)[0]
-    if (choice) { choice.g.pax += b.pax; choice.g.bookings.push(b); choice.g.zone = point ? `${point.lat.toFixed(3)}, ${point.lng.toFixed(3)}` : 'Unmapped' }
+function makeCustomerGroups(bookings: Booking[]): CustomerGroup[] {
+  const located = bookings.map(b => ({ b, point: coordinates(b.pickup) })).filter((x): x is { b: Booking; point: { lat: number; lng: number } } => Boolean(x.point))
+  const total = located.reduce((sum, x) => sum + x.b.pax, 0)
+  const groupCount = total <= 42 ? Math.max(1, Math.ceil(total / 17)) : 3 + Math.ceil((total - 42) / 17)
+  const targets = Array.from({ length: groupCount }, (_, i) => i < 3 && groupCount >= 3 ? 14 : 17)
+  const groups: CustomerGroup[] = targets.map((_, i) => ({ number: i + 1, pax: 0, bookings: [], zone: '' }))
+  const ordered = [...located].sort((a, b) => b.b.pax - a.b.pax)
+  ordered.forEach(({ b, point }) => {
+    const candidates = groups.map((g, i) => {
+      const center = g.bookings.reduce((sum, item) => { const p = coordinates(item.pickup); return p ? { lat: sum.lat + p.lat, lng: sum.lng + p.lng } : sum }, { lat: 0, lng: 0 })
+      const divisor = g.bookings.length || 1
+      const distance = g.bookings.length ? Math.hypot(point.lat - center.lat / divisor, point.lng - center.lng / divisor) : 0
+      return { g, i, score: Math.abs(g.pax + b.pax - targets[i]) + distance * 100 }
+    }).sort((a, z) => a.score - z.score)
+    const choice = candidates[0]
+    choice.g.pax += b.pax
+    choice.g.bookings.push(b)
+    choice.g.zone = `${point.lat.toFixed(3)}, ${point.lng.toFixed(3)}`
   })
   return groups.filter(g => g.bookings.length)
 }
