@@ -4,12 +4,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import Link from 'next/link'
+import { generateGroups, type Booking as GroupingBooking } from '@/lib/grouping'
 
 mapboxgl.accessToken = 'pk.eyJ1Ijoib3VjaGluNTVlZGN4IiwiYSI6ImNtaXJ1MzVrNDA2Y2ozY3NhOXoxcng3NnEifQ.6yBtRfXRlgQ8vlmsYrRS2w'
 type Booking = { id: string; pax: number; pickup: string; traveler?: string; phone?: string; email?: string; travel_date?: string }
 type Group = { key: string; lng: number; lat: number; pax: number; ids: string[]; count: number }
 type CustomerGroup = { number: number; pax: number; bookings: Booking[]; zone: string }
 function makeCustomerGroups(bookings: Booking[]): CustomerGroup[] {
+  const prepared: GroupingBooking[] = bookings.flatMap(b => { const point = coordinates(b.pickup); return point ? [{ id: b.id, leadTraveler: b.traveler || '', phone: b.phone, email: b.email, pax: b.pax, lat: point.lat, lng: point.lng }] : [] })
+  const result = generateGroups(prepared, [{ id: 'vehicle-1', name: 'Group 1', capacity: 17 }, { id: 'vehicle-2', name: 'Group 2', capacity: 17 }, { id: 'vehicle-3', name: 'Group 3', capacity: 17 }, { id: 'vehicle-4', name: 'Group 4', capacity: 17 }, { id: 'vehicle-5', name: 'Group 5', capacity: 17 }, { id: 'vehicle-6', name: 'Group 6', capacity: 17 }, { id: 'vehicle-7', name: 'Group 7', capacity: 17 }, { id: 'vehicle-8', name: 'Group 8', capacity: 17 }, { id: 'vehicle-9', name: 'Group 9', capacity: 17 }, { id: 'vehicle-10', name: 'Group 10', capacity: 17 }, { id: 'vehicle-11', name: 'Group 11', capacity: 17 }, { id: 'vehicle-12', name: 'Group 12', capacity: 17 }, { id: 'vehicle-13', name: 'Group 13', capacity: 17 }, { id: 'vehicle-14', name: 'Group 14', capacity: 17 }, { id: 'vehicle-15', name: 'Group 15', capacity: 17 }, { id: 'vehicle-16', name: 'Group 16', capacity: 17 }, { id: 'vehicle-17', name: 'Group 17', capacity: 17 }, { id: 'vehicle-18', name: 'Group 18', capacity: 17 }, { id: 'vehicle-19', name: 'Group 19', capacity: 17 }, { id: 'vehicle-20', name: 'Group 20', capacity: 17 }])
+  return result.groups.map((g, i) => ({ number: i + 1, pax: g.totalPax, bookings: g.bookings.map(b => bookings.find(x => x.id === b.id)!).filter(Boolean), zone: `${g.zoneCenter.lat.toFixed(3)}, ${g.zoneCenter.lng.toFixed(3)}` }))
+}
+function legacyMakeCustomerGroups(bookings: Booking[]): CustomerGroup[] {
   const located = bookings.map(b => ({ b, point: coordinates(b.pickup) })).filter((x): x is { b: Booking; point: { lat: number; lng: number } } => Boolean(x.point))
   const total = located.reduce((sum, x) => sum + x.b.pax, 0)
   const groupCount = total <= 42 ? Math.max(1, Math.ceil(total / 17)) : 3 + Math.ceil((total - 42) / 17)
