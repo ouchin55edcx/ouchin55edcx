@@ -19,12 +19,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ collectionBookings: result.rows })
   }
   const g = await group(date)
-  const [global, collections, blacklist] = await Promise.all([
+  const [global, collections, blacklist, assignmentRows] = await Promise.all([
     db.execute(sql`SELECT booking_id AS id, traveler, phone, email, pax, pickup, travel_date FROM bookings WHERE travel_date = ${date}::date ORDER BY created_at ASC`),
     db.execute(sql`SELECT c.id, c.name, c.created_at, COUNT(cb.id)::int AS count FROM booking_collections c LEFT JOIN collection_bookings cb ON cb.collection_id = c.id WHERE c.group_id = ${g.id} GROUP BY c.id ORDER BY c.created_at DESC`),
     db.execute(sql`SELECT booking_id FROM booking_blacklist ORDER BY created_at ASC`),
+    db.execute(sql`SELECT cb.booking_id, c.name FROM collection_bookings cb JOIN booking_collections c ON c.id = cb.collection_id WHERE c.group_id = ${g.id} AND c.name LIKE 'Group %'`),
   ])
-  return NextResponse.json({ group: g, bookings: global.rows, collections: collections.rows, blacklist: blacklist.rows.map((r) => r.booking_id) })
+  const assignments = Object.fromEntries(assignmentRows.rows.map((r) => [r.booking_id, Number(String(r.name).replace('Group ', ''))]))
+  return NextResponse.json({ group: g, bookings: global.rows, collections: collections.rows, assignments, blacklist: blacklist.rows.map((r) => r.booking_id) })
 }
 export async function POST(request: Request) {
   if (!await authorized()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -43,6 +45,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   if (!await authorized()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await request.json(); const date = String(body.date || new Date().toISOString().slice(0, 10)); const g = await group(date)
+  if (body.action === 'saveAssignments') { const assignments = body.assignments || {}; await db.execute(sql`DELETE FROM booking_collections WHERE group_id = ${g.id} AND name LIKE 'Group %'`); for (let i = 1; i <= 20; i++) { const c = await db.execute(sql`INSERT INTO booking_collections (group_id, name) VALUES (${g.id}, ${`Group ${i}`}) RETURNING id`); const collectionId = (c.rows[0] as { id: number }).id; for (const [bookingId, groupNumber] of Object.entries(assignments)) { if (Number(groupNumber) === i) await db.execute(sql`INSERT INTO collection_bookings (collection_id, booking_id, traveler, phone, email, pax, pickup) SELECT ${collectionId}, booking_id, traveler, phone, email, pax, pickup FROM bookings WHERE booking_id = ${bookingId} AND travel_date = ${date}::date ON CONFLICT DO NOTHING`) } } return NextResponse.json({ ok: true }) }
   if (body.action === 'edit') { const id = String(body.id).trim(); const traveler = String(body.traveler).trim(); const phone = String(body.phone).trim(); const email = String(body.email || '').trim() || null; const pax = Number(body.pax); const pickup = String(body.pickup).trim(); if (!id || !traveler || !phone || !email || !Number.isInteger(pax) || pax < 1 || !pickup) return NextResponse.json({ error: 'Invalid booking' }, { status: 400 }); const result = await db.execute(sql`UPDATE bookings SET traveler=${traveler}, phone=${phone}, email=${email}, pax=${pax}, pickup=${pickup} WHERE booking_id=${id} AND travel_date=${date}::date RETURNING booking_id AS id, traveler, phone, email, pax, pickup, travel_date`); return NextResponse.json(result.rows[0] || { error: 'Not found' }, { status: result.rows[0] ? 200 : 404 }) }
   if (body.action === 'collection') { const result = await db.execute(sql`INSERT INTO booking_collections (group_id, name) VALUES (${g.id}, ${String(body.name || 'New collection').trim()}) RETURNING id, name, created_at`); return NextResponse.json(result.rows[0], { status: 201 }) }
   if (body.action === 'merge') { await db.execute(sql`INSERT INTO bookings (booking_id, traveler, phone, email, pax, pickup, travel_date) SELECT cb.booking_id, cb.traveler, cb.phone, cb.email, cb.pax, cb.pickup, ${date}::date FROM collection_bookings cb WHERE cb.collection_id = ${Number(body.collectionId)} ON CONFLICT (booking_id) DO NOTHING`); return NextResponse.json({ ok: true }) }

@@ -4,114 +4,24 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import Link from 'next/link'
-import { generateGroups, type Booking as GroupingBooking } from '@/lib/grouping'
 
-mapboxgl.accessToken = 'pk.eyJ1Ijoib3VjaGluNTVlZGN4IiwiYSI6ImNtaXJ1MzVrNDA2Y2ozY3NhOXoxcng3NnEifQ.6yBtRfXRlgQ8vlmsYrRS2w'
-type Booking = { id: string; pax: number; pickup: string; traveler?: string; phone?: string; email?: string; travel_date?: string }
-type Group = { key: string; lng: number; lat: number; pax: number; ids: string[]; count: number }
-type CustomerGroup = { number: number; pax: number; bookings: Booking[]; zone: string }
-function makeCustomerGroups(bookings: Booking[]): CustomerGroup[] {
-  const prepared: GroupingBooking[] = bookings.flatMap(b => { const point = coordinates(b.pickup); return point ? [{ id: b.id, leadTraveler: b.traveler || '', phone: b.phone, email: b.email, pax: b.pax, lat: point.lat, lng: point.lng }] : [] })
-  const result = generateGroups(prepared, [{ id: 'vehicle-1', name: 'Group 1', capacity: 17 }, { id: 'vehicle-2', name: 'Group 2', capacity: 17 }, { id: 'vehicle-3', name: 'Group 3', capacity: 17 }, { id: 'vehicle-4', name: 'Group 4', capacity: 17 }, { id: 'vehicle-5', name: 'Group 5', capacity: 17 }, { id: 'vehicle-6', name: 'Group 6', capacity: 17 }, { id: 'vehicle-7', name: 'Group 7', capacity: 17 }, { id: 'vehicle-8', name: 'Group 8', capacity: 17 }, { id: 'vehicle-9', name: 'Group 9', capacity: 17 }, { id: 'vehicle-10', name: 'Group 10', capacity: 17 }, { id: 'vehicle-11', name: 'Group 11', capacity: 17 }, { id: 'vehicle-12', name: 'Group 12', capacity: 17 }, { id: 'vehicle-13', name: 'Group 13', capacity: 17 }, { id: 'vehicle-14', name: 'Group 14', capacity: 17 }, { id: 'vehicle-15', name: 'Group 15', capacity: 17 }, { id: 'vehicle-16', name: 'Group 16', capacity: 17 }, { id: 'vehicle-17', name: 'Group 17', capacity: 17 }, { id: 'vehicle-18', name: 'Group 18', capacity: 17 }, { id: 'vehicle-19', name: 'Group 19', capacity: 17 }, { id: 'vehicle-20', name: 'Group 20', capacity: 17 }])
-  return result.groups.map((g, i) => ({ number: i + 1, pax: g.totalPax, bookings: g.bookings.map(b => bookings.find(x => x.id === b.id)!).filter(Boolean), zone: `${g.zoneCenter.lat.toFixed(3)}, ${g.zoneCenter.lng.toFixed(3)}` }))
-}
-function legacyMakeCustomerGroups(bookings: Booking[]): CustomerGroup[] {
-  const located = bookings.map(b => ({ b, point: coordinates(b.pickup) })).filter((x): x is { b: Booking; point: { lat: number; lng: number } } => Boolean(x.point))
-  const total = located.reduce((sum, x) => sum + x.b.pax, 0)
-  const groupCount = total <= 42 ? Math.max(1, Math.ceil(total / 17)) : 3 + Math.ceil((total - 42) / 17)
-  const targets = Array.from({ length: groupCount }, (_, i) => i < 3 && groupCount >= 3 ? 14 : 17)
-  const groups: CustomerGroup[] = targets.map((_, i) => ({ number: i + 1, pax: 0, bookings: [], zone: '' }))
-  const ordered = [...located].sort((a, b) => b.b.pax - a.b.pax)
-  ordered.forEach(({ b, point }) => {
-    const candidates = groups.map((g, i) => {
-      const center = g.bookings.reduce((sum, item) => { const p = coordinates(item.pickup); return p ? { lat: sum.lat + p.lat, lng: sum.lng + p.lng } : sum }, { lat: 0, lng: 0 })
-      const divisor = g.bookings.length || 1
-      const distance = g.bookings.length ? Math.hypot(point.lat - center.lat / divisor, point.lng - center.lng / divisor) : 0
-      return { g, i, score: Math.abs(g.pax + b.pax - targets[i]) + distance * 100 }
-    }).sort((a, z) => a.score - z.score)
-    const fitting = candidates.filter(({ g }) => g.pax + b.pax <= 17)
-    const choice = fitting[0]
-    if (!choice) return
-    choice.g.pax += b.pax
-    choice.g.bookings.push(b)
-    choice.g.zone = `${point.lat.toFixed(3)}, ${point.lng.toFixed(3)}`
-  })
-  return groups.filter(g => g.bookings.length)
-}
-
-function coordinates(rawUrl: string) {
-  const url = decodeURIComponent(rawUrl.trim())
-  const ordered = url.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
-  if (ordered) return { lat: Number(ordered[1]), lng: Number(ordered[2]) }
-  const pair = url.match(/(?:@|q=|query=|ll=|place\/)(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i)
-  if (pair) {
-    const lat = Number(pair[1]); const lng = Number(pair[2])
-    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng }
-  }
-  const fallback = url.match(/(-?\d{1,3}\.\d{4,}),\s*(-?\d{1,3}\.\d{4,})/)
-  if (fallback) {
-    const first = Number(fallback[1]); const second = Number(fallback[2])
-    if (Math.abs(first) <= 90 && Math.abs(second) <= 180) return { lat: first, lng: second }
-  }
-  return null
-}
+type Booking = { id: string; traveler?: string; phone?: string; pax: number; pickup: string }
+type Assigned = Record<string, number>
+const TOKEN = 'pk.eyJ1Ijoib3VjaGluNTVlZGN4IiwiYSI6ImNtaXJ1MzVrNDA2Y2ozY3NhOXoxcng3NnEifQ.6yBtRfXRlgQ8vlmsYrRS2w'
+function coords(value: string) { const s = decodeURIComponent(value || ''); const m = s.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)|@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/); if (!m) return null; return { lat: Number(m[1] || m[3]), lng: Number(m[2] || m[4]) } }
+function total(items: Booking[]) { return items.reduce((n, b) => n + Number(b.pax || 0), 0) }
 
 export default function MapClient() {
-  const mapRef = useRef<HTMLDivElement>(null)
-  const map = useRef<mapboxgl.Map | null>(null)
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-  const [bookings, setBookings] = useState<Booking[]>([])
-  const [loading, setLoading] = useState(true)
-  const [customerGroups, setCustomerGroups] = useState<CustomerGroup[]>([])
-  const [grouping, setGrouping] = useState(false)
-  const [selectedCustomerGroup, setSelectedCustomerGroup] = useState<number | null>(null)
-
-  useEffect(() => {
-    fetch(`/api/bookings?date=${date}`).then(r => r.json()).then(data => setBookings(data.bookings || [])).finally(() => setLoading(false))
-  }, [date])
-
-  const groups = useMemo<Group[]>(() => {
-    const grouped = new Map<string, Group>()
-    bookings.forEach(booking => {
-      const point = coordinates(booking.pickup)
-      if (!point) return
-      const key = `${point.lat.toFixed(5)},${point.lng.toFixed(5)}`
-      const current = grouped.get(key)
-      if (current) { current.pax += booking.pax; current.ids.push(booking.id); current.count += 1 }
-      else grouped.set(key, { key, ...point, pax: booking.pax, ids: [booking.id], count: 1 })
-    })
-    return [...grouped.values()]
-  }, [bookings])
-
-  useEffect(() => {
-    if (!mapRef.current || map.current) return
-    map.current = new mapboxgl.Map({ container: mapRef.current, style: 'mapbox://styles/mapbox/dark-v11', center: [2.35, 48.86], zoom: 5 })
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
-    const resize = () => map.current?.resize()
-    map.current.on('load', resize)
-    const observer = new ResizeObserver(resize)
-    observer.observe(mapRef.current)
-    requestAnimationFrame(resize)
-    return () => { observer.disconnect(); map.current?.remove(); map.current = null }
-  }, [])
-
-  useEffect(() => {
-    if (!map.current) return
-    const markers: mapboxgl.Marker[] = []
-    groups.forEach(group => {
-      const intensity = group.pax >= 20 ? '#ef4444' : group.pax >= 10 ? '#f59e0b' : '#22c55e'
-      const highlighted = selectedCustomerGroup === null || customerGroups[selectedCustomerGroup - 1]?.bookings.some(b => group.ids.includes(b.id))
-      const el = document.createElement('button'); el.type = 'button'; el.setAttribute('aria-label', `${group.pax} passengers, ${group.count} bookings`)
-      el.style.cssText = `width:${Math.min(48, 22 + group.pax)}px;height:${Math.min(48, 22 + group.pax)}px;border-radius:999px;background:${intensity};border:3px solid rgba(255,255,255,.85);box-shadow:0 3px 12px rgba(0,0,0,.35);color:#111;font-weight:800;cursor:pointer;opacity:${highlighted ? 1 : .22};filter:${highlighted ? 'none' : 'grayscale(1)'}`
-      el.textContent = String(group.pax)
-      const popup = new mapboxgl.Popup({ offset: 22, closeButton: true }).setHTML(`<div style="color:#111;min-width:120px"><strong>${group.pax} pax</strong><br/><span style="font-size:11px">${group.ids.join(', ')}</span></div>`)
-      markers.push(new mapboxgl.Marker(el).setLngLat([group.lng, group.lat]).setPopup(popup).addTo(map.current!))
-    })
-    if (groups.length) map.current.fitBounds(groups.reduce((bounds, group) => bounds.extend([group.lng, group.lat]), new mapboxgl.LngLatBounds()), { padding: 80, maxZoom: 13 })
-    return () => markers.forEach(marker => marker.remove())
-  }, [groups, selectedCustomerGroup, customerGroups])
-
-  const pax = bookings.reduce((sum, booking) => sum + booking.pax, 0)
-  function generateGroups() { setGrouping(true); setCustomerGroups(makeCustomerGroups(bookings)); setGrouping(false) }
-  return <main className="flex min-h-screen bg-background text-foreground"><aside className="flex w-60 shrink-0 flex-col border-r border-border bg-card p-5"><div className="mb-8 text-lg font-bold">Trip operations</div><nav className="grid gap-2" aria-label="Main navigation"><Link href="/" className="rounded-xl px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">Bookings</Link><Link href="/map" className="rounded-xl bg-primary/15 px-3 py-2 text-sm font-semibold text-primary">Map overview</Link></nav></aside><section className="flex min-w-0 flex-1 flex-col"><header className="flex flex-wrap items-center justify-between gap-4 border-b border-border px-6 py-5"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-primary">Location board</p><h1 className="mt-1 text-2xl font-bold">Pickup map</h1></div><input aria-label="Travel date" type="date" value={date} onChange={e => { setLoading(true); setDate(e.target.value) }} className="rounded-xl border border-input bg-background px-3 py-2 text-sm" /></header><div className="grid gap-3 border-b border-border px-6 py-4 sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">Bookings</p><strong className="text-xl">{bookings.length}</strong></div><div><p className="text-xs text-muted-foreground">Passengers</p><strong className="text-xl">{pax}</strong></div><div><p className="text-xs text-muted-foreground">Pickup groups</p><strong className="text-xl">{groups.length}</strong></div></div><div className="relative flex h-[calc(100vh-170px)] min-h-[520px] flex-1"><aside className="z-10 w-80 shrink-0 overflow-y-auto border-r border-border bg-card/95 p-4"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Customer groups</h2><p className="text-xs text-muted-foreground">Maximum 17 pax · bookings stay together</p></div><button onClick={generateGroups} disabled={grouping||!bookings.length} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">{grouping?'Building…':'Generate'}</button></div>{customerGroups.length>0&&<div className="mt-4 grid gap-2">{customerGroups.map(g=><article key={g.number} onClick={() => setSelectedCustomerGroup(selectedCustomerGroup === g.number ? null : g.number)} className={`cursor-pointer rounded-xl border p-3 transition-colors ${selectedCustomerGroup === g.number ? 'border-primary bg-primary/10' : 'border-border bg-background'}`}><div className="flex items-center justify-between"><span className="font-semibold">Group {g.number}</span><strong>{g.pax} pax</strong></div><p className="mt-1 text-xs text-muted-foreground">{g.bookings.length} bookings · zone {g.zone}</p><p className="mt-2 break-words text-xs text-muted-foreground">{g.bookings.map(b=>b.id).join(', ')}</p></article>)}</div>}{!customerGroups.length&&<p className="mt-6 text-sm text-muted-foreground">Generate groups to assign nearby pickup locations into 20 balanced customer groups.</p>}</aside><div className="relative min-w-0 flex-1"><div ref={mapRef} className="absolute inset-0 h-full w-full" />{!loading && !groups.length && <div className="absolute left-1/2 top-1/2 max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border bg-card/95 p-6 text-center shadow-xl"><h2 className="font-semibold">No mapped pickup groups</h2><p className="mt-2 text-sm text-muted-foreground">Bookings without coordinates cannot appear on the map. Add Google Maps pickup URLs from the bookings page.</p></div>}</div><div className="flex flex-wrap gap-4 border-t border-border px-6 py-3 text-xs text-muted-foreground"><span><i className="mr-1 inline-block size-2 rounded-full bg-green-500" />Under 10 pax</span><span><i className="mr-1 inline-block size-2 rounded-full bg-amber-500" />10–19 pax</span><span><i className="mr-1 inline-block size-2 rounded-full bg-red-500" />20+ pax</span><span className="ml-auto">Popup: pax total + booking IDs</span></div></div></section></main>
+  const mapRef = useRef<HTMLDivElement>(null); const map = useRef<mapboxgl.Map | null>(null)
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); const [bookings, setBookings] = useState<Booking[]>([]); const [assigned, setAssigned] = useState<Assigned>({}); const [dragged, setDragged] = useState<string | null>(null); const [selected, setSelected] = useState<number | null>(null); const [search, setSearch] = useState(''); const [saving, setSaving] = useState(false)
+  const groups = useMemo(() => Array.from({ length: 20 }, (_, i) => i + 1).map(number => ({ number, bookings: bookings.filter(b => assigned[b.id] === number) })), [bookings, assigned])
+  const unassigned = useMemo(() => bookings.filter(b => !assigned[b.id] && (!search || `${b.traveler} ${b.phone} ${b.id}`.toLowerCase().includes(search.toLowerCase()))), [bookings, assigned, search])
+  const pax = total(bookings)
+  async function load() { const r = await fetch(`/api/bookings?date=${date}`); const data = await r.json(); setBookings(data.bookings || []); setAssigned(data.assignments || {}) }
+  useEffect(() => { load() }, [date])
+  async function save(next: Assigned) { setAssigned(next); setSaving(true); await fetch('/api/bookings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'saveAssignments', date, assignments: next }) }); setSaving(false) }
+  function drop(group: number) { if (!dragged) return; const booking = bookings.find(b => b.id === dragged); if (!booking || total(groups[group - 1].bookings) + booking.pax > 17) return; save({ ...assigned, [dragged]: group }); setDragged(null) }
+  useEffect(() => { mapboxgl.accessToken = TOKEN; if (!mapRef.current || map.current) return; map.current = new mapboxgl.Map({ container: mapRef.current, style: 'mapbox://styles/mapbox/dark-v11', center: [2.35, 48.86], zoom: 5 }); map.current.addControl(new mapboxgl.NavigationControl(), 'top-right'); const resize = () => map.current?.resize(); map.current.on('load', resize); const ro = new ResizeObserver(resize); ro.observe(mapRef.current); return () => { ro.disconnect(); map.current?.remove(); map.current = null } }, [])
+  useEffect(() => { if (!map.current) return; const markers: mapboxgl.Marker[] = []; bookings.forEach(b => { const p = coords(b.pickup); if (!p) return; const group = assigned[b.id]; const active = selected === null || group === selected; const el = document.createElement('button'); el.textContent = String(b.pax); el.title = `${b.id} · ${b.pax} pax`; el.style.cssText = `width:32px;height:32px;border-radius:50%;border:2px solid white;background:${group ? '#38bdf8' : '#f59e0b'};opacity:${active ? 1 : .25};font-weight:800;cursor:pointer`; el.onclick = () => setSelected(group || null); markers.push(new mapboxgl.Marker(el).setLngLat([p.lng, p.lat]).setPopup(new mapboxgl.Popup().setHTML(`<strong>${b.pax} pax</strong><br/>${b.id}`)).addTo(map.current!)) }); return () => markers.forEach(m => m.remove()) }, [bookings, assigned, selected])
+  return <main className="flex min-h-screen bg-background text-foreground"><aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card p-5"><div className="mb-8 text-lg font-bold">Trip operations</div><nav className="grid gap-2"><Link href="/" className="rounded-xl px-3 py-2 text-sm text-muted-foreground">Bookings</Link><Link href="/map" className="rounded-xl bg-primary/15 px-3 py-2 text-sm font-semibold text-primary">Manual groups</Link></nav></aside><section className="flex min-w-0 flex-1 flex-col"><header className="flex flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-primary">Manual planning</p><h1 className="text-2xl font-bold">Assign pickups</h1></div><div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">{saving ? 'Saving…' : 'Saved by travel date'}</span><input aria-label="Travel date" type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-xl border border-input bg-background px-3 py-2 text-sm" /></div></header><div className="grid gap-3 border-b border-border px-5 py-3 sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">Bookings</p><strong className="text-xl">{bookings.length}</strong></div><div><p className="text-xs text-muted-foreground">Passengers</p><strong className="text-xl">{pax}</strong></div><div><p className="text-xs text-muted-foreground">Unassigned</p><strong className="text-xl">{unassigned.length}</strong></div></div><div className="flex min-h-0 flex-1 flex-col lg:flex-row"><aside className="order-2 w-full overflow-y-auto border-r border-border bg-card p-4 lg:order-1 lg:w-96"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, phone, or ID" className="mb-3 h-10 w-full rounded-xl border border-input bg-background px-3 text-sm" /><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unassigned bookings</p><div className="grid gap-2">{unassigned.map(b => <button draggable onDragStart={() => setDragged(b.id)} key={b.id} className="rounded-xl border border-border bg-background p-3 text-left hover:border-primary"><div className="flex justify-between text-sm font-semibold"><span>{b.traveler || b.id}</span><span>{b.pax} pax</span></div><p className="text-xs text-muted-foreground">{b.id} · {b.phone}</p></button>)}{!unassigned.length && <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">All matching bookings are assigned.</p>}</div><p className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Groups</p><div className="grid grid-cols-2 gap-2">{groups.map(g => <button key={g.number} onClick={() => setSelected(selected === g.number ? null : g.number)} onDragOver={e => e.preventDefault()} onDrop={() => drop(g.number)} className={`min-h-20 rounded-xl border p-3 text-left ${selected === g.number ? 'border-primary bg-primary/10' : 'border-border bg-background'}`}><div className="flex justify-between text-sm font-semibold"><span>Group {g.number}</span><span>{total(g.bookings)}/17</span></div><p className="mt-1 text-xs text-muted-foreground">{g.bookings.length} bookings</p><div className="mt-2 grid gap-1">{g.bookings.map(b => <span draggable onDragStart={() => setDragged(b.id)} key={b.id} className="truncate text-xs" title="Drag to another group">{b.id} · {b.pax}</span>)}</div></button>)}</div></aside><div className="relative order-1 min-h-[520px] min-w-0 flex-1 lg:order-2"><div ref={mapRef} className="absolute inset-0 h-full w-full" /><div className="pointer-events-none absolute left-4 top-4 rounded-xl border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground">Drag a booking onto a group · max 17 pax</div></div></div></section></main>
 }
