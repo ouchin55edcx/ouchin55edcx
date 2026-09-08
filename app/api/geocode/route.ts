@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 
 function extractCoordinates(value: string) {
-  const decoded = decodeURIComponent(value)
-  const match = decoded.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)|@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/)
-  return match ? { lat: Number(match[1] || match[3]), lng: Number(match[2] || match[4]) } : null
+  const decoded = decodeURIComponent(value).replace(/\\u003d/g, '=').replace(/\\u0026/g, '&').replace(/&amp;/g, '&')
+  const match = decoded.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)|@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)|(?:query|ll|center)=(-?\d+(?:\.\d+)?)[,%20]+(-?\d+(?:\.\d+)?)/i)
+  return match ? { lat: Number(match[1] || match[3] || match[5]), lng: Number(match[2] || match[4] || match[6]) } : null
 }
 
 export async function GET(request: Request) {
   const url = new URL(request.url).searchParams.get('url')
-  if (!url || !/^https?:\/\/(?:www\.)?google\.[^/]+\//i.test(url)) return NextResponse.json({ error: 'Invalid Google Maps URL' }, { status: 400 })
+  if (!url || !/^https?:\/\/(?:www\.)?(?:google\.[^/]+|maps\.app\.goo\.gl|goo\.gl)\//i.test(url)) return NextResponse.json({ error: 'Invalid Google Maps URL' }, { status: 400 })
   try {
     const direct = extractCoordinates(url)
     if (direct) return NextResponse.json(direct)
