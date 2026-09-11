@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CalendarDays, Map, Menu, X, Plane, CircleHelp } from 'lucide-react'
+import { CalendarDays, Map, Menu, X, Plane, CircleHelp, Clock3 } from 'lucide-react'
 import { useState } from 'react'
 
 export default function DashboardShell({ children, userName }: { children: React.ReactNode; userName?: string }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
-  const links = [{ href: '/', label: 'Bookings', icon: CalendarDays }, { href: '/map', label: 'Manual groups', icon: Map }]
+  const links = [{ href: '/', label: 'Bookings', icon: CalendarDays }, { href: '/map', label: 'Manual groups', icon: Map }, { href: '/time-groups', label: 'Pickup times', icon: Clock3 }]
   return <div className="min-h-screen bg-background text-foreground">
     <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur md:px-8">
       <div className="flex items-center gap-3"><button type="button" aria-label="Open navigation" onClick={() => setOpen(true)} className="rounded-lg p-2 hover:bg-muted md:hidden"><Menu className="size-5" /></button><div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Plane className="size-4" /></div><div><p className="text-sm font-semibold tracking-tight">Travel operations</p><p className="hidden text-xs text-muted-foreground sm:block">Pickup manifest workspace</p></div></div>

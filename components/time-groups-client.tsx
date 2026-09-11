@@ -1,0 +1,29 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { Clipboard, Clock3 } from 'lucide-react'
+
+type Booking = { id: string; traveler: string; phone: string; email?: string | null; pax: number; pickup: string }
+type Group = { time: string; ids: string[] }
+const today = () => new Date().toISOString().slice(0, 10)
+
+export default function TimeGroupsClient() {
+  const [date, setDate] = useState(today())
+  const [bookings, setBookings] = useState<Booking[]>([])
+  const [time, setTime] = useState('15:00')
+  const [idsText, setIdsText] = useState('')
+  const [groups, setGroups] = useState<Group[]>([])
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => { fetch(`/api/bookings?date=${date}`).then(r => r.json()).then(d => setBookings(d.bookings || [])) }, [date])
+  const lookup = useMemo(() => new Map(bookings.map(b => [b.id.trim().toLowerCase(), b])), [bookings])
+  const ids = useMemo(() => Array.from(new Set(idsText.split(/[\s,;|]+/).map(v => v.trim()).filter(Boolean))), [idsText])
+  const selected = useMemo(() => ids.map(id => lookup.get(id.toLowerCase())).filter(Boolean) as Booking[], [ids, lookup])
+  const missing = ids.filter(id => !lookup.has(id.toLowerCase()))
+  const selectedPax = selected.reduce((sum, b) => sum + b.pax, 0)
+
+  function addGroup() { if (!selected.length) return; setGroups(current => [...current.filter(g => g.time !== time), { time, ids: selected.map(b => b.id) }].sort((a, b) => a.time.localeCompare(b.time))); setIdsText('') }
+  function copyAll() { const text = groups.map(group => `${date} — Pickup ${group.time}\n${group.ids.map(id => { const b = lookup.get(id.toLowerCase()); return b ? `${b.id} | ${b.traveler} | ${b.pax} pax | ${b.pickup}` : id }).join('\n')}`).join('\n\n'); navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1600) }
+
+  return <main className="min-h-screen bg-background px-4 py-5 text-foreground sm:px-6 sm:py-8"><div className="mx-auto flex max-w-6xl flex-col gap-6"><header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5"><div><p className="font-mono text-xs uppercase tracking-[0.22em] text-primary">Pickup planning</p><h1 className="mt-1 text-2xl font-semibold">Group bookings by pickup time</h1><p className="mt-1 text-sm text-muted-foreground">Paste booking IDs, choose a pickup time, and build a ready-to-copy list.</p></div><label className="flex items-center gap-2 text-sm">Travel date <input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-10 rounded-xl border border-input bg-card px-3" /></label></header><div className="grid gap-5 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]"><section className="rounded-2xl border border-border bg-card p-5 shadow-sm"><div className="mb-5 flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary"><Clock3 className="size-5" /></div><div><h2 className="font-semibold">Create a time group</h2><p className="text-sm text-muted-foreground">One booking ID per line or separated by spaces.</p></div></div><div className="grid gap-4"><label className="grid gap-2 text-sm font-medium">1. Pickup time<input type="time" value={time} onChange={e => setTime(e.target.value)} className="h-12 rounded-xl border border-input bg-background px-3 text-base" /></label><label className="grid gap-2 text-sm font-medium">2. Booking IDs<textarea autoFocus value={idsText} onChange={e => setIdsText(e.target.value)} placeholder={'BK-1001\nBK-1002\nBK-1003'} rows={7} className="resize-y rounded-xl border border-input bg-background px-3 py-3 font-mono text-sm" /></label><div className="rounded-xl border border-border bg-background/60 p-3 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Recognized bookings</span><strong>{selected.length} · {selectedPax} pax</strong></div>{missing.length > 0 && <p className="mt-2 text-xs text-destructive">Not found: {missing.join(', ')}</p>}</div><button type="button" onClick={addGroup} disabled={!selected.length} className="h-12 rounded-xl bg-primary font-semibold text-primary-foreground disabled:opacity-40">Add {selected.length || ''} bookings to {time}</button></div></section><section className="rounded-2xl border border-border bg-card p-5 shadow-sm"><div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="font-semibold">Pickup schedule</h2><p className="text-sm text-muted-foreground">{groups.length} time groups for {date}</p></div><button type="button" onClick={copyAll} disabled={!groups.length} className="inline-flex h-10 items-center gap-2 rounded-xl border border-input px-3 text-sm disabled:opacity-40"><Clipboard className="size-4" />{copied ? 'Copied' : 'Copy all as text'}</button></div>{groups.length ? <div className="grid gap-3">{groups.map(group => { const items = group.ids.map(id => lookup.get(id.toLowerCase())).filter(Boolean) as Booking[]; return <article key={group.time} className="rounded-xl border border-border bg-background p-4"><div className="flex items-center justify-between"><h3 className="font-semibold">Pickup {group.time}</h3><span className="text-xs text-muted-foreground">{items.length} bookings · {items.reduce((n, b) => n + b.pax, 0)} pax</span></div><div className="mt-3 grid gap-2">{items.map(b => <div key={b.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm"><span className="min-w-0 truncate"><strong>{b.traveler}</strong><span className="ml-2 font-mono text-xs text-muted-foreground">{b.id}</span></span><span className="shrink-0 text-muted-foreground">{b.pax} pax</span></div>)}</div></article>})}</div> : <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Your pickup time groups will appear here.</div>}</section></div></div></main>
+}
