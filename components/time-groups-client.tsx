@@ -17,14 +17,15 @@ export default function TimeGroupsClient() {
   const [editing, setEditing] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => { fetch(`/api/bookings?date=${date}`).then(r => r.json()).then(d => setBookings(d.bookings || [])) }, [date])
+  useEffect(() => { Promise.all([fetch(`/api/bookings?date=${date}`).then(r => r.json()), fetch(`/api/bookings?date=${date}&pickupGroups=true`).then(r => r.json())]).then(([bookingData, groupData]) => { setBookings(bookingData.bookings || []); setGroups(groupData.groups || []) }) }, [date])
   const lookup = useMemo(() => new Map(bookings.map(b => [b.id.trim().toLowerCase(), b])), [bookings])
   const ids = useMemo(() => Array.from(new Set(idsText.split(/[\s,;|]+/).map(v => v.trim()).filter(Boolean))), [idsText])
   const selected = useMemo(() => ids.map(id => lookup.get(id.toLowerCase())).filter(Boolean) as Booking[], [ids, lookup])
   const missing = ids.filter(id => !lookup.has(id.toLowerCase()))
   const selectedPax = selected.reduce((sum, b) => sum + b.pax, 0)
 
-  function addGroup() { if (!selected.length || !title.trim()) return; const next = { title: title.trim(), time, ids: selected.map(b => b.id) }; setGroups(current => [...current.filter(g => g.time !== time || g.title !== title), next].sort((a, b) => a.time.localeCompare(b.time))); setIdsText(''); setEditing(null) }
+  async function persist(nextGroups: Group[]) { setGroups(nextGroups); await fetch('/api/bookings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'savePickupGroups', date, groups: nextGroups }) }) }
+  function addGroup() { if (!selected.length || !title.trim() || !time) return; const next = { title: title.trim(), time, ids: selected.map(b => b.id) }; void persist([...groups.filter(g => editing ? `${g.title}-${g.time}` !== editing : g.time !== time || g.title !== title), next].sort((a, b) => a.time.localeCompare(b.time))); setIdsText(''); setEditing(null) }
   function editGroup(group: Group) { setEditing(`${group.title}-${group.time}`); setTitle(group.title); setTime(group.time); setIdsText(group.ids.join('\n')) }
   function copyAll() { const text = groups.map(group => `${date} — ${group.title} — Pickup ${group.time}\n${group.ids.map(id => { const b = lookup.get(id.toLowerCase()); return b ? `${b.id} | ${b.traveler} | ${b.pax} pax | Pickup ${group.time} | ${b.pickup}` : id }).join('\n')}`).join('\n\n'); navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1600) }
 
