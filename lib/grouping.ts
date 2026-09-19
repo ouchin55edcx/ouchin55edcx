@@ -31,6 +31,16 @@ export interface Booking {
   lng: number;
   bookingRef?: string;
   pinnedBusId?: string | null; // if set, this booking should stay on this bus
+  pickupTime?: string | null;
+}
+
+export function isEnglishSpeaker(phone?: string): boolean {
+  return /(?:^|\D)(?:\+44|\+1|\+61|\+353)(?:\D|$)/.test(phone || '');
+}
+
+function normalizedPickupTime(value?: string | null): string | null {
+  if (!value) return null;
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 export interface Bus {
@@ -45,6 +55,9 @@ export interface BusGroup {
   bookings: Booking[];
   totalPax: number;
   zoneCenter: { lat: number; lng: number };
+  pickupTimes?: string[];
+  mixedPickupTimes?: boolean;
+  englishFocused?: boolean;
 }
 
 export interface GenerateGroupsResult {
@@ -219,6 +232,16 @@ function totalPax(bookings: Booking[]): number {
   return bookings.reduce((s, b) => s + b.pax, 0);
 }
 
+function pickupTimes(bookings: Booking[]): string[] {
+  return [...new Set(bookings.map((b) => normalizedPickupTime(b.pickupTime)).filter((time): time is string => Boolean(time)))];
+}
+
+function canSharePickupGroup(a: Booking[], b: Booking[]): boolean {
+  const aTimes = pickupTimes(a);
+  const bTimes = pickupTimes(b);
+  return aTimes.length === 0 || bTimes.length === 0 || aTimes.some((time) => bTimes.includes(time));
+}
+
 function refine(groups: WorkingGroup[], maxRounds = 300): void {
   let improved = true;
   let round = 0;
@@ -232,6 +255,8 @@ function refine(groups: WorkingGroup[], maxRounds = 300): void {
           const ma = groups[a].bookings[i];
           if (ma.pinnedBusId) continue;
 
+          // Keep pickup times together; mixing is only allowed in forced capacity passes.
+          if (!canSharePickupGroup(groups[a].bookings, groups[b].bookings)) continue;
           // try MOVE: shift ma from a -> b if it fits and improves spread
           const roomB = groups[b].bus.capacity - totalPax(groups[b].bookings);
           if (ma.pax <= roomB) {
@@ -254,6 +279,7 @@ function refine(groups: WorkingGroup[], maxRounds = 300): void {
             if (mb.pinnedBusId) continue;
             const sa = totalPax(groups[a].bookings);
             const sb = totalPax(groups[b].bookings);
+            if (!canSharePickupGroup(groups[a].bookings.filter((x) => x !== ma).concat(mb), groups[b].bookings.filter((x) => x !== mb).concat(ma))) continue;
             const newSa = sa - ma.pax + mb.pax;
             const newSb = sb - mb.pax + ma.pax;
             if (newSa > groups[a].bus.capacity || newSb > groups[b].bus.capacity)
@@ -299,6 +325,7 @@ function consolidate(groups: WorkingGroup[]): WorkingGroup[] {
       for (let j = 0; j < groups.length; j++) {
         if (j === i || groups[j].bookings.length === 0) continue;
         const target = groups[j];
+        if (!canSharePickupGroup(src.bookings, target.bookings)) continue;
         const room = target.bus.capacity - usedPax(target);
         if (usedPax(src) > room) continue;
         // prefer close + snug fit: distance is primary, leftover room breaks ties
@@ -476,6 +503,9 @@ export function generateGroups(
       bookings: g.bookings,
       totalPax: totalPax(g.bookings),
       zoneCenter: centroid(g.bookings),
+      pickupTimes: pickupTimes(g.bookings),
+      mixedPickupTimes: pickupTimes(g.bookings).length > 1,
+      englishFocused: g.bookings.length > 0 && g.bookings.filter((b) => isEnglishSpeaker(b.phone)).length / g.bookings.length >= 0.5,
     }))
     .sort((a, b) => a.zoneCenter.lng - b.zoneCenter.lng);
 
@@ -503,6 +533,8 @@ export function exportGroupsAsTxt(
     lines.push(
       `BUS: ${g.bus.name} (${g.bus.owner || "unassigned owner"}) - ${g.totalPax}/${g.bus.capacity} PAX - ${g.bookings.length} bookings`
     );
+    if (g.mixedPickupTimes) lines.push(`⚠️ Mixed pickup times: ${g.pickupTimes?.join(" & ")}`);
+    if (g.englishFocused) lines.push("Guide note: English-speaker group (majority detected by phone country code)");
     lines.push("-".repeat(70));
     for (const b of g.bookings) {
       lines.push(`Lead traveler: ${b.leadTraveler}`);
