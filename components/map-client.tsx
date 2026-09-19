@@ -6,7 +6,7 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 
 type Booking = { id: string; traveler?: string; phone?: string; pax: number; pickup: string; pickupTime?: string; cancelled?: boolean; email?: string }
 type Assigned = Record<string, number>
-const TOKEN = 'pk.eyJ1Ijoib3VjaGluNTVlZGN4IiwiYSI6ImNtaXJ1MzVrNDA2Y2ozY3NhOXoxcng3NnEifQ.6yBtRfXRlgQ8vlmsYrRS2w'
+const TOKEN = process.env.api || ''
 const colors = ['#38bdf8', '#a78bfa', '#34d399', '#fb7185', '#fbbf24', '#f97316']
 function coords(value: string) { const s = decodeURIComponent(String(value || '')).replace(/\\u003d/g, '=').replace(/\\u0026/g, '&').replace(/&amp;/g, '&'); const patterns = [/\/maps\/place\/(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i, /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/, /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/, /(?:query|ll|center)=(-?\d+(?:\.\d+)?)[,%20]+(-?\d+(?:\.\d+)?)/i]; for (const pattern of patterns) { const m = s.match(pattern); if (!m) continue; const lat = Number(m[1]); const lng = Number(m[2]); if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng } } return null }
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] || char)) }
